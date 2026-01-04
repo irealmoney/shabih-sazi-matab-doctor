@@ -42,5 +42,6 @@ export interface SimulationStats {
   totalVisits: number;
   waitTimes: number[];
   visitTimes: number[];
+  totalCost: number;
 }
 

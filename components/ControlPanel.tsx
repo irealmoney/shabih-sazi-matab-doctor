@@ -14,6 +14,7 @@ interface ControlPanelProps {
     totalVisits: number;
     waitTimes: number[];
     visitTimes: number[];
+    totalCost: number;
   };
   onAddPatient: () => void;
   onToggleSimulation: () => void;
@@ -36,6 +37,11 @@ export default function ControlPanel({
 }: ControlPanelProps) {
   const [localReceptionCount, setLocalReceptionCount] = useState(receptionCount);
   const [localDoctorCount, setLocalDoctorCount] = useState(doctorCount);
+
+  // محاسبه میانگین زمان ویزیت
+  const avgVisitTime = stats.visitTimes.length > 0
+    ? stats.visitTimes.reduce((a, b) => a + b, 0) / stats.visitTimes.length
+    : 0;
 
   return (
     <div className="bg-white p-4 rounded-lg shadow-md">
@@ -149,15 +155,27 @@ export default function ControlPanel({
           <StatsChart stats={stats} />
         </div>
         <div className="bg-gray-50 p-4 rounded space-y-2">
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center justify-between text-sm">
             <span className="text-gray-600">میانگین زمان انتظار:</span>
             <span className="font-semibold text-gray-800">
-              {Math.round(stats.avgWaitTime)} دقیقه
+              {stats.avgWaitTime > 0 ? stats.avgWaitTime.toFixed(1) : '0.0'} دقیقه
             </span>
           </div>
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-600">میانگین زمان ویزیت:</span>
+            <span className="font-semibold text-gray-800">
+              {avgVisitTime.toFixed(1)} دقیقه
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
             <span className="text-gray-600">تعداد ویزیت‌های امروز:</span>
             <span className="font-semibold text-gray-800">{stats.totalVisits}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-600">مجموع هزینه:</span>
+            <span className="font-semibold text-gray-800">
+              {stats.totalCost.toLocaleString('fa-IR')} تومان
+            </span>
           </div>
         </div>
       </div>

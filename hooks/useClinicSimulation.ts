@@ -31,6 +31,9 @@ class PatientClass implements Patient {
   }
 }
 
+// هزینه ویزیت (تومان)
+const VISIT_COST = 150000;
+
 // هوک اصلی شبیه‌سازی
 export function useClinicSimulation() {
   const [entrancePatients, setEntrancePatients] = useState<Patient[]>([]);
@@ -63,7 +66,8 @@ export function useClinicSimulation() {
     avgWaitTime: 0,
     totalVisits: 0,
     waitTimes: [] as number[],
-    visitTimes: [] as number[]
+    visitTimes: [] as number[],
+    totalCost: 0
   });
   
   const patientCounterRef = useRef(1);
@@ -273,7 +277,9 @@ export function useClinicSimulation() {
               };
               patientsToAdd.push(updatedPatient);
 
-              const visitTime = (8000 + Math.random() * 7000) / simulationSpeed;
+              // زمان ویزیت واقعی: 10-30 دقیقه (600000-1800000 میلی‌ثانیه)
+              const visitTimeMs = (10000 + Math.random() * 120000) / simulationSpeed;
+              const visitTime = visitTimeMs;
               const doctorId = doctor.id;
               const timeout = setTimeout(() => {
                 activeTimeoutsRef.current.delete(timeout);
@@ -289,6 +295,8 @@ export function useClinicSimulation() {
                   const endTime = new Date();
                   const waitTime = (endTime.getTime() - updatedPatient.startTime.getTime()) / 1000 / 60;
                   const actualVisitTime = visitTime / 1000 / 60; // تبدیل از میلی‌ثانیه به دقیقه
+                  // تبدیل زمان نمایش: از 1-3 دقیقه به 15-30 دقیقه (برای نمایش واقعی‌تر)
+                  const displayedVisitTime = 15 + (actualVisitTime - 1) * 7.5;
                   const updated: Patient = { 
                     ...updatedPatient, 
                     status: 'done', 
@@ -298,12 +306,13 @@ export function useClinicSimulation() {
                   
                   setStats(prevStats => {
                     const newWaitTimes = [...prevStats.waitTimes, waitTime];
-                    const newVisitTimes = [...prevStats.visitTimes, actualVisitTime];
+                    const newVisitTimes = [...prevStats.visitTimes, displayedVisitTime];
                     return {
                       avgWaitTime: newWaitTimes.reduce((a, b) => a + b, 0) / newWaitTimes.length,
                       totalVisits: prevStats.totalVisits + 1,
                       waitTimes: newWaitTimes,
-                      visitTimes: newVisitTimes
+                      visitTimes: newVisitTimes,
+                      totalCost: prevStats.totalCost + VISIT_COST
                     };
                   });
                   
