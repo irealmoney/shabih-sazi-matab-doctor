@@ -41,6 +41,7 @@ export function useClinicSimulation() {
   const [completedPatients, setCompletedPatients] = useState<Patient[]>([]);
   const [receptionDoneQueue, setReceptionDoneQueue] = useState<Patient[]>([]);
   const isPaymentBusyRef = useRef(false);
+  const isProcessingReceptionRef = useRef(false);
 
   
   const [receptionBooths, setReceptionBooths] = useState<ReceptionBooth[]>([
@@ -132,9 +133,12 @@ export function useClinicSimulation() {
 
   // پردازش صف پذیرش
   const processReceptionQueue = useCallback(() => {
-    setReceptionBooths(prevBooths => {
-      if (entrancePatients.length === 0) return prevBooths;
+    if (isProcessingReceptionRef.current) return;
+    if (entrancePatients.length === 0) return;
 
+    isProcessingReceptionRef.current = true;
+
+    setReceptionBooths(prevBooths => {
       const newBooths = [...prevBooths];
       const newEntrance = [...entrancePatients];
       const patientsToAdd: Patient[] = [];
@@ -164,91 +168,85 @@ export function useClinicSimulation() {
           const timeout = setTimeout(() => {
             activeTimeoutsRef.current.delete(timeout);
 
-            setReceptionBooths(prev =>
-              prev.map(b => b.id === booth.id ? { ...b, busy: false, patient: null } : b)
-            );
+            // آزاد کردن باجه
+            setReceptionBooths(prev => prev.map(b => b.id === booth.id ? { ...b, busy: false, patient: null } : b));
 
+            // حذف بیمار از receptionPatients
             setReceptionPatients(prev => prev.filter(p => p.id !== updatedPatient.id));
 
-            setReceptionDoneQueue(prev =>
-              prev.some(p => p.id === updatedPatient.id)
-                ? prev
-                : [...prev, { ...updatedPatient, status: 'payment' }]
-            );
+            // اضافه کردن به payment queue فقط اگر هنوز اضافه نشده
+            setReceptionDoneQueue(prev => {
+              if (prev.some(p => p.id === updatedPatient.id)) return prev;
+              return [...prev, { ...updatedPatient, status: 'payment' }];
+            });
           }, receptionTime);
 
           activeTimeoutsRef.current.add(timeout);
         }
       }
 
+      // اضافه کردن بیماران جدید به receptionPatients با بررسی تکراری بودن
       if (patientsToAdd.length > 0) {
-        setEntrancePatients(newEntrance); // ✅ تنها نقطه‌ی تغییر
-        setReceptionPatients(prev => [...prev, ...patientsToAdd]);
+        setReceptionPatients(prev => {
+          const ids = new Set(prev.map(p => p.id));
+          const filtered = patientsToAdd.filter(p => !ids.has(p.id));
+          return [...prev, ...filtered];
+        });
+        setEntrancePatients(newEntrance);
       }
 
+      isProcessingReceptionRef.current = false;
       return newBooths;
     });
   }, [entrancePatients, simulationSpeed]);
 
   // پردازش پرداخت - اصلاح شده برای جلوگیری از race و حذف غیرمطمئن
   const processPaymentQueue = useCallback(() => {
-    // اگر در حال پردازش بیمار دیگری در payment هستیم، صبر می‌کنیم
-    if (isPaymentBusyRef.current) return;
+    if (receptionDoneQueue.length === 0) return;
 
     setReceptionDoneQueue(prevQueue => {
-      if (prevQueue.length === 0) return prevQueue;
-
       const sorted = [...prevQueue].sort((a, b) => (a.receptionOrder || 0) - (b.receptionOrder || 0));
       const next = sorted[0];
 
-      // اگر این بیمار قبلاً در حال پردازش است، نادیده می‌گیریم
-      if (processingPaymentRef.current.has(next.id)) {
-        return prevQueue;
-      }
+      if (!next) return prevQueue;
 
-      // علامت‌گذاری بیمار به عنوان در حال پردازش
+      // اگر قبلاً در حال پردازش است، نادیده بگیر
+      if (processingPaymentRef.current.has(next.id)) return prevQueue;
+
       processingPaymentRef.current.add(next.id);
       const payingPatient: Patient = { ...next, _paying: true };
 
-      // قرار دادن بیمار در paymentPatients بلافاصله (بدون setTimeout 0)
-      setPaymentPatients(prev =>
-        prev.some(p => p.id === payingPatient.id)
-          ? prev
-          : [...prev, payingPatient]
-      );
-      console.debug('[sim] start payment', payingPatient.id, 'paymentPatients', [payingPatient.id]);
+      // اضافه کردن بیمار به paymentPatients فقط اگر هنوز اضافه نشده
+      setPaymentPatients(prev => {
+        if (prev.some(p => p.id === payingPatient.id)) return prev;
+        return [...prev, payingPatient];
+      });
 
-      // زمان پرداخت
       const paymentTime = (1000 + Math.random() * 1000) / simulationSpeed;
       const timeout = setTimeout(() => {
         activeTimeoutsRef.current.delete(timeout);
 
-        setPaymentPatients(prev =>
-          prev.filter(p => p.id !== payingPatient.id)
-        );
+        // حذف از paymentPatients بعد از اتمام پرداخت
+        setPaymentPatients(prev => prev.filter(p => p.id !== payingPatient.id));
 
         const { _paying, ...rest } = payingPatient as any;
-        const updated: Patient = {
-          ...rest,
-          hasPaid: true,
-          status: 'waiting'
-        };
+        const updated: Patient = { ...rest, hasPaid: true, status: 'waiting' };
 
-        setWaitingPatients(prev =>
-          prev.some(p => p.id === updated.id)
-            ? prev
-            : [...prev, updated]
-        );
+        setWaitingPatients(prev => {
+          if (prev.some(p => p.id === updated.id)) return prev;
+          return [...prev, updated];
+        });
 
-        isPaymentBusyRef.current = false;
-      }, paymentTime)
+        processingPaymentRef.current.delete(payingPatient.id);
+
+      }, paymentTime);
 
       activeTimeoutsRef.current.add(timeout);
 
-      // حذف از receptionDoneQueue
+      // حذف بیمار از receptionDoneQueue قبل از پرداخت
       return prevQueue.filter(p => p.id !== next.id);
     });
-  }, [simulationSpeed]);
+  }, [receptionDoneQueue, simulationSpeed]);
 
   // پردازش صف دکتر
   const processDoctorQueue = useCallback(() => {
